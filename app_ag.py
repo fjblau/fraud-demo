@@ -343,10 +343,16 @@ def explore_claims(db):
         # Get claims for display
         claims_query = db.execute_and_fetch("""
             MATCH (c:CLAIM)
+            OPTIONAL MATCH (c)-[:ON_INCIDENT]->(incident:INCIDENT)
+            OPTIONAL MATCH (incident)-[:INCIDENT]->(individual:INDIVIDUAL)
+            WITH c, 
+                COLLECT(DISTINCT individual.last_name) AS last_names,
+                COLLECT(DISTINCT toString(incident.accident_date)) AS incident_dates
             RETURN c.clm_id AS claim_id, 
-                   c.amount AS amount, 
-                   c.fraud AS is_fraud,
-                   c.status AS status
+                c.amount AS amount, 
+                c.fraud AS is_fraud,
+                last_names AS individuals_last_names,
+                incident_dates AS dates
             LIMIT 100
         """)
         
@@ -867,9 +873,16 @@ def fraud_detection(db):
             # Get claims for display
             claims_query = db.execute_and_fetch("""
                 MATCH (c:CLAIM)
+                OPTIONAL MATCH (c)-[:ON_INCIDENT]->(incident:INCIDENT)
+                OPTIONAL MATCH (incident)-[:INCIDENT]->(individual:INDIVIDUAL)
+                WITH c, 
+                    COLLECT(DISTINCT individual.last_name) AS last_names,
+                    COLLECT(DISTINCT toString(incident.accident_date)) AS incident_dates
                 RETURN c.clm_id AS claim_id, 
-                       c.amount AS amount,
-                       c.fraud AS is_fraud
+                    c.amount AS amount, 
+                    c.fraud AS is_fraud,
+                    last_names AS individuals_last_names,
+                    incident_dates AS dates
                 LIMIT 100
             """)
             
