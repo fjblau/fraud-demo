@@ -1,11 +1,3 @@
-"""
-Insurance Fraud Detection Streamlit Application with Plotly Visualizations
-and AgGrid for enhanced table display
-
-This application demonstrates using graph databases and machine learning
-to detect potentially fraudulent insurance claims.
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -36,6 +28,9 @@ st.set_page_config(
     page_icon="🔍",
     layout="wide"
 )
+
+# Debug: Show Streamlit version
+st.write(f"Streamlit version: {st.__version__}")
 
 # Set up database connection
 def get_db_connection():
@@ -380,7 +375,7 @@ def explore_claims(db):
             )
         
         with col2:
-            status_values = ["All"]
+            status_values = ["All", "In Review", "Paid", "Denied"]
             if "status" in claims_df.columns:
                 for val in claims_df["status"].dropna().unique():
                     if val is not None:
@@ -833,7 +828,7 @@ def analyze_claim(db, model_data, claim_id):
         st.exception(e)
         return None, None
 
-# Display fraud detection page
+# Display fraud detection page (now without the Input New Claim tab)
 def fraud_detection(db):
     """Display fraud detection page with prediction functionality"""
     st.header("Fraud Detection")
@@ -862,324 +857,348 @@ def fraud_detection(db):
                     st.error(f"Error training model: {e}")
                     return
     
-    # Create tabs for different prediction methods
-    tab1, tab2 = st.tabs(["Analyze Existing Claim", "Input New Claim"])
+    # Now this page only handles existing claim analysis (no tabs)
+    st.subheader("Analyze Existing Claim")
     
-    # Tab 1: Analyze existing claim
-    with tab1:
-        st.subheader("Analyze Existing Claim")
+    try:
+        # Get claims for display
+        claims_query = db.execute_and_fetch("""
+            MATCH (c:CLAIM)
+            OPTIONAL MATCH (c)-[:ON_INCIDENT]->(incident:INCIDENT)
+            OPTIONAL MATCH (incident)-[:INCIDENT]->(individual:INDIVIDUAL)
+            WITH c, 
+                COLLECT(DISTINCT individual.last_name) AS last_names,
+                COLLECT(DISTINCT toString(incident.accident_date)) AS incident_dates
+            RETURN c.clm_id AS claim_id, 
+                c.amount AS amount, 
+                c.fraud AS is_fraud,
+                last_names AS individuals_last_names,
+                incident_dates AS dates
+            LIMIT 100
+        """)
         
+        # Safe conversion to list with error handling
         try:
-            # Get claims for display
-            claims_query = db.execute_and_fetch("""
-                MATCH (c:CLAIM)
-                OPTIONAL MATCH (c)-[:ON_INCIDENT]->(incident:INCIDENT)
-                OPTIONAL MATCH (incident)-[:INCIDENT]->(individual:INDIVIDUAL)
-                WITH c, 
-                    COLLECT(DISTINCT individual.last_name) AS last_names,
-                    COLLECT(DISTINCT toString(incident.accident_date)) AS incident_dates
-                RETURN c.clm_id AS claim_id, 
-                    c.amount AS amount, 
-                    c.fraud AS is_fraud,
-                    last_names AS individuals_last_names,
-                    incident_dates AS dates
-                LIMIT 100
-            """)
-            
-            # Safe conversion to list with error handling
-            try:
-                claims = list(claims_query) if claims_query else []
-            except:
-                claims = []
-            
-            if not claims:
-                st.info("No claims found in database")
-                return
-                
-            # Convert to DataFrame for display
-            claims_df = pd.DataFrame(claims)
-            
-            # Add a filter for known fraud status
-            show_known_frauds = st.checkbox("Show known fraudulent claims", value=False)
-            if show_known_frauds:
-                filtered_claims = claims_df
-            else:
-                # Hide claims with known fraud status if the checkbox is not checked
-                filtered_claims = claims_df[claims_df['is_fraud'].isna()]
-            
-            # Check if filtered DataFrame is empty
-            if hasattr(filtered_claims, 'empty') and filtered_claims.empty:
-                st.info("No claims match the filter criteria")
-                return
-                
-            # Display the table of claims using AgGrid
-            response = configure_aggrid(
-                filtered_claims,
-                selection_mode='single',
-                height=400,
-                pagination=True,
-                page_size=20,
-                key="fraud_detection_grid"
-            )
-            
-            # Get selected row from AgGrid
-            selected_rows = response.get("selected_rows")
-            
-            # Check if selected_rows is None or empty
-            if selected_rows is None or (hasattr(selected_rows, '__len__') and len(selected_rows) == 0):
-                st.info("Select a claim from the table to analyze")
-                return
-            
-            # Get the selected claim ID - handle different return types
-            selected_claim = None
-            try:
-                # Try accessing as a list of dictionaries
-                if isinstance(selected_rows, list) and len(selected_rows) > 0:
-                    selected_claim = selected_rows[0].get("claim_id")
-                # Try accessing as a DataFrame
-                elif hasattr(selected_rows, 'iloc') and len(selected_rows) > 0:
-                    selected_claim = selected_rows.iloc[0].get("claim_id")
-            except Exception as e:
-                st.error(f"Error accessing selected claim: {e}")
-                return
-                
-            if not selected_claim:
-                st.error("Could not determine selected claim. Please try selecting again.")
-                return
-                
-            # Add an analyze button
-            analyze_button = st.button("Analyze Selected Claim")
-            
-            if analyze_button:
-                # Analyze the claim
-                analyze_claim(db, model_data, selected_claim)
-                
-        except Exception as e:
-            st.error(f"Error in claim analysis: {e}")
-            st.exception(e)  # This will show the full traceback for debugging
-    
-    # Tab 2: Input new claim
-    with tab2:
-        st.subheader("Input Claim Data Manually")
+            claims = list(claims_query) if claims_query else []
+        except:
+            claims = []
         
-        with st.form("new_claim_form"):
-            st.subheader("New Claim Information")
+        if not claims:
+            st.info("No claims found in database")
+            return
             
-            col1, col2 = st.columns(2)
+        # Convert to DataFrame for display
+        claims_df = pd.DataFrame(claims)
+        
+        # Add a filter for known fraud status
+        show_known_frauds = st.checkbox("Show known fraudulent claims", value=False)
+        if show_known_frauds:
+            filtered_claims = claims_df
+        else:
+            # Hide claims with known fraud status if the checkbox is not checked
+            filtered_claims = claims_df[claims_df['is_fraud'].isna()]
+        
+        # Check if filtered DataFrame is empty
+        if hasattr(filtered_claims, 'empty') and filtered_claims.empty:
+            st.info("No claims match the filter criteria")
+            return
             
-            with col1:
-                ind_count = st.number_input("Number of individuals involved", min_value=0, max_value=10, value=1)
-                amount_paid = st.number_input("Amount paid ($)", min_value=0.0, max_value=100000.0, value=5000.0)
-                premium_type = st.selectbox("Policy premium type", ["A", "B", "C", "D", "U"])
+        # Display the table of claims using AgGrid
+        response = configure_aggrid(
+            filtered_claims,
+            selection_mode='single',
+            height=400,
+            pagination=True,
+            page_size=20,
+            key="fraud_detection_grid"
+        )
+        
+        # Get selected row from AgGrid
+        selected_rows = response.get("selected_rows")
+        
+        # Check if selected_rows is None or empty
+        if selected_rows is None or (hasattr(selected_rows, '__len__') and len(selected_rows) == 0):
+            st.info("Select a claim from the table to analyze")
+            return
+        
+        # Get the selected claim ID - handle different return types
+        selected_claim = None
+        try:
+            # Try accessing as a list of dictionaries
+            if isinstance(selected_rows, list) and len(selected_rows) > 0:
+                selected_claim = selected_rows[0].get("claim_id")
+            # Try accessing as a DataFrame
+            elif hasattr(selected_rows, 'iloc') and len(selected_rows) > 0:
+                selected_claim = selected_rows.iloc[0].get("claim_id")
+        except Exception as e:
+            st.error(f"Error accessing selected claim: {e}")
+            return
             
-            with col2:
-                num_frauds_community = st.number_input("Frauds in community", min_value=0, max_value=10, value=0)
-                num_frauds_neighborhood = st.number_input("Frauds in neighborhood", min_value=0, max_value=10, value=0)
-                influence = st.number_input("Influence score", min_value=0.0, max_value=1.0, value=0.001, format="%.5f")
+        if not selected_claim:
+            st.error("Could not determine selected claim. Please try selecting again.")
+            return
             
-            # Add descriptions
-            with st.expander("Feature Descriptions"):
-                st.markdown("""
-                - **Number of individuals involved**: Count of people associated with the claim
-                - **Amount paid**: Total amount paid for the claim
-                - **Policy premium type**: Premium category (A = highest, D = lowest, U = unknown)
-                - **Frauds in community**: Count of fraudulent claims in the same community
-                - **Frauds in neighborhood**: Count of fraudulent claims within 4 hops in the graph
-                - **Influence score**: PageRank centrality (how connected the claim is in the network)
-                """)
+        # Add an analyze button
+        analyze_button = st.button("Analyze Selected Claim")
+        
+        if analyze_button:
+            # Analyze the claim
+            analyze_claim(db, model_data, selected_claim)
             
-            submitted = st.form_submit_button("Analyze Claim")
-            
-            if submitted:
-                # Create manual features dictionary
-                manual_features = {
-                    "ind_count": ind_count,
-                    "amount_paid": amount_paid,
-                    "premium_type": premium_type,
-                    "num_frauds_community": num_frauds_community,
-                    "num_frauds_neighborhood": num_frauds_neighborhood,
-                    "influence": influence
-                }
-                
-                # Create features DataFrame
+    except Exception as e:
+        st.error(f"Error in claim analysis: {e}")
+        st.exception(e)  # This will show the full traceback for debugging
+
+# New dedicated page for input new claim
+def input_new_claim(db):
+    """Display dedicated page for inputting and analyzing new claims"""
+    st.header("Input New Claim")
+    
+    # Get or train the model
+    if should_retrain_model(db):
+        with st.spinner("Training fraud detection model..."):
+            try:
+                model_data = train_fraud_detection_model(db)
+                save_model(model_data)
+                st.success("Model trained successfully!")
+            except Exception as e:
+                st.error(f"Error training model: {e}")
+                st.error("Please check the database connection and try again.")
+                return
+    else:
+        # Load model from cache
+        model_data = load_model()
+        if model_data is None:
+            with st.spinner("Training fraud detection model..."):
                 try:
-                    features = prepare_new_claim_features(manual_features)
-                    
-                    # Get feature columns
-                    feature_columns = model_data.get("feature_columns", [])
-                    feature_columns_exist = feature_columns is not None and hasattr(feature_columns, '__len__') and len(feature_columns) > 0
-                    
-                    # Ensure all required columns are present
-                    if feature_columns_exist:
-                        # Convert feature_columns to list if it's an Index
-                        if hasattr(feature_columns, 'tolist'):
-                            feature_list = feature_columns.tolist()
-                        else:
-                            feature_list = list(feature_columns)
-                            
-                        # Add missing columns with default values
-                        for col in feature_list:
-                            if col not in features.columns:
-                                features[col] = 0
+                    model_data = train_fraud_detection_model(db)
+                    save_model(model_data)
+                    st.success("Model trained successfully!")
+                except Exception as e:
+                    st.error(f"Error training model: {e}")
+                    return
+    
+    st.subheader("Enter Claim Data Manually")
+    
+    # Create the form for input
+    with st.form("new_claim_form"):
+        st.subheader("New Claim Information")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ind_count = st.number_input("Number of individuals involved", min_value=0, max_value=10, value=1)
+            amount_paid = st.number_input("Amount paid ($)", min_value=0.0, max_value=100000.0, value=5000.0)
+            premium_type = st.selectbox("Policy premium type", ["A", "B", "C", "D", "U"])
+        
+        with col2:
+            num_frauds_community = st.number_input("Frauds in community", min_value=0, max_value=10, value=0)
+            num_frauds_neighborhood = st.number_input("Frauds in neighborhood", min_value=0, max_value=10, value=0)
+            influence = st.number_input("Influence score", min_value=0.0, max_value=1.0, value=0.001, format="%.5f")
+        
+        # Add descriptions
+        with st.expander("Feature Descriptions"):
+            st.markdown("""
+            - **Number of individuals involved**: Count of people associated with the claim
+            - **Amount paid**: Total amount paid for the claim
+            - **Policy premium type**: Premium category (A = highest, D = lowest, U = unknown)
+            - **Frauds in community**: Count of fraudulent claims in the same community
+            - **Frauds in neighborhood**: Count of fraudulent claims within 4 hops in the graph
+            - **Influence score**: PageRank centrality (how connected the claim is in the network)
+            """)
+        
+        submitted = st.form_submit_button("Analyze Claim")
+        
+        if submitted:
+            # Create manual features dictionary
+            manual_features = {
+                "ind_count": ind_count,
+                "amount_paid": amount_paid,
+                "premium_type": premium_type,
+                "num_frauds_community": num_frauds_community,
+                "num_frauds_neighborhood": num_frauds_neighborhood,
+                "influence": influence
+            }
+            
+            # Create features DataFrame
+            try:
+                features = prepare_new_claim_features(manual_features)
+                
+                # Get feature columns
+                feature_columns = model_data.get("feature_columns", [])
+                feature_columns_exist = feature_columns is not None and hasattr(feature_columns, '__len__') and len(feature_columns) > 0
+                
+                # Ensure all required columns are present
+                if feature_columns_exist:
+                    # Convert feature_columns to list if it's an Index
+                    if hasattr(feature_columns, 'tolist'):
+                        feature_list = feature_columns.tolist()
+                    else:
+                        feature_list = list(feature_columns)
                         
-                        # Keep only required columns in the same order
-                        # Filter to include only columns that exist in features
-                        columns_to_use = [col for col in feature_list if col in features.columns]
-                        if columns_to_use and len(columns_to_use) > 0:
-                            features = features[columns_to_use]
+                    # Add missing columns with default values
+                    for col in feature_list:
+                        if col not in features.columns:
+                            features[col] = 0
                     
-                    # Make prediction
-                    prediction = predict_fraud(model_data, features)
-                    
-                    # Display results
-                    st.markdown("---")
-                    st.subheader("Fraud Analysis Results")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if prediction.get("is_fraud", False):
-                            st.error("⚠️ Potential Fraud Detected!")
-                        else:
-                            st.success("✓ Claim appears legitimate")
-                    
-                    with col2:
-                        fraud_prob = prediction.get("fraud_probability", 0) * 100
-                        st.metric("Fraud Probability", f"{fraud_prob:.1f}%")
-                    
-                    # Place gauge and recommendation side by side
-                    vis_col1, vis_col2 = st.columns(2)
-                    
-                    with vis_col1:
-                        # Create a gauge chart with Plotly
-                        fig = go.Figure(go.Indicator(
-                            mode = "gauge+number",
-                            value = fraud_prob,
-                            domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': "Fraud Risk"},
-                            gauge = {
-                                'axis': {'range': [None, 100]},
-                                'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
-                                'steps': [
-                                    {'range': [0, 25], 'color': "lightgreen"},
-                                    {'range': [25, 50], 'color': "lightyellow"},
-                                    {'range': [50, 75], 'color': "orange"},
-                                    {'range': [75, 100], 'color': "lightcoral"}
-                                ],
-                                'threshold': {
-                                    'line': {'color': "red", 'width': 4},
-                                    'thickness': 0.75,
-                                    'value': 75
-                                }
+                    # Keep only required columns in the same order
+                    # Filter to include only columns that exist in features
+                    columns_to_use = [col for col in feature_list if col in features.columns]
+                    if columns_to_use and len(columns_to_use) > 0:
+                        features = features[columns_to_use]
+                
+                # Make prediction
+                prediction = predict_fraud(model_data, features)
+                
+                # Display results
+                st.markdown("---")
+                st.subheader("Fraud Analysis Results")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if prediction.get("is_fraud", False):
+                        st.error("⚠️ Potential Fraud Detected!")
+                    else:
+                        st.success("✓ Claim appears legitimate")
+                
+                with col2:
+                    fraud_prob = prediction.get("fraud_probability", 0) * 100
+                    st.metric("Fraud Probability", f"{fraud_prob:.1f}%")
+                
+                # Place gauge and recommendation side by side
+                vis_col1, vis_col2 = st.columns(2)
+                
+                with vis_col1:
+                    # Create a gauge chart with Plotly
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = fraud_prob,
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "Fraud Risk"},
+                        gauge = {
+                            'axis': {'range': [None, 100]},
+                            'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
+                            'steps': [
+                                {'range': [0, 25], 'color': "lightgreen"},
+                                {'range': [25, 50], 'color': "lightyellow"},
+                                {'range': [50, 75], 'color': "orange"},
+                                {'range': [75, 100], 'color': "lightcoral"}
+                            ],
+                            'threshold': {
+                                'line': {'color': "red", 'width': 4},
+                                'thickness': 0.75,
+                                'value': 75
                             }
-                        ))
-                        
-                        fig.update_layout(
-                            height=400,
-                            margin=dict(l=20, r=20, t=50, b=20)
-                        )
-                        
-                        st.plotly_chart(fig)
-                    
-                    with vis_col2:
-                        # Add recommendations with matching height
-                        st.subheader("Next Steps")
-                        
-                        # Recommendation box with height to match gauge
-                        recommendation_style = """
-                        <style>
-                        .recommendation-box {
-                            height: 290px;
-                            padding: 20px;
-                            border-radius: 5px;
-                            display: flex;
-                            flex-direction: column;
-                            justify-content: center;
                         }
-                        .high-risk { background-color: rgba(255, 99, 71, 0.2); }
-                        .medium-risk { background-color: rgba(255, 165, 0, 0.2); }
-                        .low-med-risk { background-color: rgba(255, 255, 0, 0.1); }
-                        .low-risk { background-color: rgba(144, 238, 144, 0.2); }
-                        </style>
-                        """
-                        
-                        st.markdown(recommendation_style, unsafe_allow_html=True)
-                        
-                        if fraud_prob > 75:
-                            st.markdown("""
-                            <div class="recommendation-box high-risk">
-                            <h3>⚠️ High Risk Action Required:</h3>
-                            <ul>
-                              <li>Immediately escalate to fraud investigation team</li>
-                              <li>Place a hold on all claim processing</li>
-                              <li>Verify all documentation thoroughly</li>
-                              <li>Schedule interviews with all involved parties</li>
-                              <li>Check for connections to known fraud patterns</li>
-                            </ul>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        elif fraud_prob > 50:
-                            st.markdown("""
-                            <div class="recommendation-box medium-risk">
-                            <h3>⚠️ Medium-High Risk Action Required:</h3>
-                            <ul>
-                              <li>Request additional verification before processing</li>
-                              <li>Verify identity of all involved individuals</li>
-                              <li>Cross-check with previous claims history</li>
-                              <li>Conduct additional phone interviews</li>
-                              <li>Document all unusual aspects of the claim</li>
-                            </ul>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        elif fraud_prob > 25:
-                            st.markdown("""
-                            <div class="recommendation-box low-med-risk">
-                            <h3>ℹ️ Medium-Low Risk Action Required:</h3>
-                            <ul>
-                              <li>Proceed with standard verification steps</li>
-                              <li>Verify documentation is complete</li>
-                              <li>Follow normal processing procedures</li>
-                              <li>Note any unusual patterns for future reference</li>
-                              <li>No special handling required</li>
-                            </ul>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.markdown("""
-                            <div class="recommendation-box low-risk">
-                            <h3>✓ Low Risk Action Required:</h3>
-                            <ul>
-                              <li>Proceed with standard processing</li>
-                              <li>No additional verification needed</li>
-                              <li>Process claim according to normal timeline</li>
-                              <li>Apply standard documentation procedures</li>
-                              <li>No special attention required</li>
-                            </ul>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    ))
                     
-                    # Create radar chart of input features below the gauges
-                    radar_data = {
-                        'Feature': ['Individuals', 'Amount Paid', 'Community Frauds', 'Neighborhood Frauds', 'Influence'],
-                        'Value': [ind_count, amount_paid/10000, num_frauds_community, num_frauds_neighborhood, influence*1000]  # Scaled for visibility
-                    }
-                    
-                    # Create a radar chart
-                    fig = px.line_polar(
-                        pd.DataFrame(radar_data), 
-                        r='Value', 
-                        theta='Feature', 
-                        line_close=True,
-                        range_r=[0, max(radar_data['Value'])*1.2],
-                        title="Feature Radar Chart"
+                    fig.update_layout(
+                        height=400,
+                        margin=dict(l=20, r=20, t=50, b=20)
                     )
                     
-                    fig.update_traces(fill='toself')
-                    
                     st.plotly_chart(fig)
-                except Exception as e:
-                    st.error(f"Error processing claim: {e}")
-                    st.exception(e)
+                
+                with vis_col2:
+                    # Add recommendations with matching height
+                    st.subheader("Next Steps")
+                    
+                    # Recommendation box with height to match gauge
+                    recommendation_style = """
+                    <style>
+                    .recommendation-box {
+                        height: 290px;
+                        padding: 20px;
+                        border-radius: 5px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                    }
+                    .high-risk { background-color: rgba(255, 99, 71, 0.2); }
+                    .medium-risk { background-color: rgba(255, 165, 0, 0.2); }
+                    .low-med-risk { background-color: rgba(255, 255, 0, 0.1); }
+                    .low-risk { background-color: rgba(144, 238, 144, 0.2); }
+                    </style>
+                    """
+                    
+                    st.markdown(recommendation_style, unsafe_allow_html=True)
+                    
+                    if fraud_prob > 75:
+                        st.markdown("""
+                        <div class="recommendation-box high-risk">
+                        <h3>⚠️ High Risk Action Required:</h3>
+                        <ul>
+                          <li>Immediately escalate to fraud investigation team</li>
+                          <li>Place a hold on all claim processing</li>
+                          <li>Verify all documentation thoroughly</li>
+                          <li>Schedule interviews with all involved parties</li>
+                          <li>Check for connections to known fraud patterns</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    elif fraud_prob > 50:
+                        st.markdown("""
+                        <div class="recommendation-box medium-risk">
+                        <h3>⚠️ Medium-High Risk Action Required:</h3>
+                        <ul>
+                          <li>Request additional verification before processing</li>
+                          <li>Verify identity of all involved individuals</li>
+                          <li>Cross-check with previous claims history</li>
+                          <li>Conduct additional phone interviews</li>
+                          <li>Document all unusual aspects of the claim</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    elif fraud_prob > 25:
+                        st.markdown("""
+                        <div class="recommendation-box low-med-risk">
+                        <h3>ℹ️ Medium-Low Risk Action Required:</h3>
+                        <ul>
+                          <li>Proceed with standard verification steps</li>
+                          <li>Verify documentation is complete</li>
+                          <li>Follow normal processing procedures</li>
+                          <li>Note any unusual patterns for future reference</li>
+                          <li>No special handling required</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+                        <div class="recommendation-box low-risk">
+                        <h3>✓ Low Risk Action Required:</h3>
+                        <ul>
+                          <li>Proceed with standard processing</li>
+                          <li>No additional verification needed</li>
+                          <li>Process claim according to normal timeline</li>
+                          <li>Apply standard documentation procedures</li>
+                          <li>No special attention required</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Create radar chart of input features below the gauges
+                radar_data = {
+                    'Feature': ['Individuals', 'Amount Paid', 'Community Frauds', 'Neighborhood Frauds', 'Influence'],
+                    'Value': [ind_count, amount_paid/10000, num_frauds_community, num_frauds_neighborhood, influence*1000]  # Scaled for visibility
+                }
+                
+                # Create a radar chart
+                fig = px.line_polar(
+                    pd.DataFrame(radar_data), 
+                    r='Value', 
+                    theta='Feature', 
+                    line_close=True,
+                    range_r=[0, max(radar_data['Value'])*1.2],
+                    title="Feature Radar Chart"
+                )
+                
+                fig.update_traces(fill='toself')
+                
+                st.plotly_chart(fig)
+            except Exception as e:
+                st.error(f"Error processing claim: {e}")
+                st.exception(e)
 
 # Display model evaluation page
 def model_evaluation(db):
@@ -1650,9 +1669,9 @@ def main():
     if not db:
         return
     
-    # Sidebar for navigation
+    # Sidebar for navigation - add "Input New Claim" as a dedicated page
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Overview", "Explore Claims", "Fraud Detection", "Model Evaluation"])
+    page = st.sidebar.radio("Go to", ["Overview", "Explore Claims", "Fraud Detection", "Input New Claim", "Model Evaluation"])
     
     if page == "Overview":
         display_overview(db)
@@ -1660,6 +1679,8 @@ def main():
         explore_claims(db)
     elif page == "Fraud Detection":
         fraud_detection(db)
+    elif page == "Input New Claim":  # New dedicated page
+        input_new_claim(db)
     elif page == "Model Evaluation":
         model_evaluation(db)
 
