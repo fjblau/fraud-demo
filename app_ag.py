@@ -82,6 +82,7 @@ def configure_aggrid(df, selection_mode='single', height=400, fit_columns=True, 
     
     # Configure columns
     for col in df.columns:
+        gb.configure_column(col, headerClass="align-left", cellStyle={"textAlign": "left"})
         if pd.api.types.is_numeric_dtype(df[col]):
             gb.configure_column(col, type=["numericColumn", "numberColumnFilter"], precision=2)
         elif col == 'is_fraud':
@@ -91,11 +92,11 @@ def configure_aggrid(df, selection_mode='single', height=400, fit_columns=True, 
                 cellRenderer=JsCode('''
                 function(params) {
                     if (params.value === true) {
-                        return '<span style="color: red; font-weight: bold;">⚠️ Yes</span>';
+                        return '<span style="color: red; font-weight: bold; text-align: left;">⚠️ Yes</span>';
                     } else if (params.value === false) {
-                        return '<span style="color: green;">No</span>';
+                        return '<span style="color: green; text-align: left;">No</span>';
                     } else {
-                        return '<span style="color: gray;">Unknown</span>';
+                        return '<span style="color: gray; text-align: left">Unknown</span>';
                     }
                 }
                 ''')
