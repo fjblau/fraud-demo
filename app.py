@@ -1,5 +1,5 @@
 """
-Insurance Fraud Detection Streamlit Application
+Insurance Fraud Detection Streamlit Application with Plotly Visualizations
 
 This application demonstrates using graph databases and machine learning
 to detect potentially fraudulent insurance claims.
@@ -8,8 +8,8 @@ to detect potentially fraudulent insurance claims.
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 from gqlalchemy import Memgraph
 import os
@@ -156,21 +156,31 @@ def display_overview(db):
             if claim_count > 0:
                 fraud_percentage = (fraud_count / claim_count) * 100
                 
-                # Create a smaller figure with smaller text
-                fig, ax = plt.subplots(figsize=(3, 3))
-                wedges, texts, autotexts = ax.pie(
-                    [fraud_count, claim_count - fraud_count], 
-                    labels=['Fraud', 'Legitimate'], 
-                    autopct='%1.1f%%', 
-                    colors=['#ff9999','#66b3ff']
+                # Create a Plotly pie chart
+                fig = px.pie(
+                    values=[fraud_count, claim_count - fraud_count],
+                    names=['Fraud', 'Legitimate'],
+                    color_discrete_sequence=['#ff9999', '#66b3ff'],
+                    title="Fraud vs Legitimate Claims",
+                    height=300,
+                    width=300
                 )
                 
-                # Set font sizes
-                plt.setp(texts, fontsize=8)
-                plt.setp(autotexts, fontsize=7)
+                # Customize layout for a smaller chart
+                fig.update_layout(
+                    margin=dict(l=20, r=20, t=30, b=20),
+                    legend=dict(
+                        font=dict(size=10),
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.3,
+                        xanchor="center",
+                        x=0.5
+                    ),
+                    font=dict(size=10)
+                )
                 
-                ax.axis('equal')
-                st.pyplot(fig)
+                st.plotly_chart(fig, use_container_width=False)
             else:
                 st.info("No claims data available")
         except Exception as e:
@@ -325,10 +335,26 @@ def explore_claims(db):
                     payments_df = pd.DataFrame(details["payments"])
                     st.write(payments_df)
                     
-                    # Create a payment chart
+                    # Create a payment chart with Plotly
                     if len(payments_df) > 0 and "amount" in payments_df.columns:
                         st.subheader("Payment Distribution")
-                        st.bar_chart(payments_df["amount"])
+                        
+                        fig = px.bar(
+                            payments_df, 
+                            x="payment_id", 
+                            y="amount",
+                            title="Payments for this Claim",
+                            labels={"payment_id": "Payment ID", "amount": "Amount ($)"},
+                            color_discrete_sequence=['#2a9df4']
+                        )
+                        
+                        fig.update_layout(
+                            xaxis_title="Payment ID",
+                            yaxis_title="Amount ($)",
+                            height=400
+                        )
+                        
+                        st.plotly_chart(fig)
                 else:
                     st.info("No payments associated with this claim")
                 
@@ -358,6 +384,34 @@ def explore_claims(db):
                     features_df = features_df.drop(columns=[FeatureStore.POL_PREMIUM])
                     
                     st.write(features_df)
+                    
+                    # Visualize feature values with Plotly
+                    numeric_features = [
+                        FeatureStore.IND_COUNT,
+                        FeatureStore.AMT_PAID,
+                        FeatureStore.NUM_FRAUDS_COMMUNITY,
+                        FeatureStore.NUM_FRAUDS_NEIGHBORHOOD,
+                        FeatureStore.INFLUENCE
+                    ]
+                    
+                    # Plot numeric features as a horizontal bar chart
+                    feature_values = features_df[numeric_features].iloc[0]
+                    
+                    fig = px.bar(
+                        x=feature_values.values,
+                        y=feature_values.index,
+                        orientation='h',
+                        title="Numeric Feature Values",
+                        labels={"x": "Value", "y": "Feature"},
+                        color_discrete_sequence=['#1f77b4']
+                    )
+                    
+                    fig.update_layout(
+                        yaxis={'categoryorder':'total ascending'},
+                        height=300
+                    )
+                    
+                    st.plotly_chart(fig)
                     
                     # Show feature descriptions
                     with st.expander("Feature Descriptions"):
@@ -483,6 +537,36 @@ def fraud_detection(db):
                             fraud_prob = prediction["fraud_probability"] * 100
                             st.metric("Fraud Probability", f"{fraud_prob:.1f}%")
                         
+                        # Create a gauge chart with Plotly
+                        fig = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = fraud_prob,
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            title = {'text': "Fraud Risk"},
+                            gauge = {
+                                'axis': {'range': [None, 100]},
+                                'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
+                                'steps': [
+                                    {'range': [0, 25], 'color': "lightgreen"},
+                                    {'range': [25, 50], 'color': "lightyellow"},
+                                    {'range': [50, 75], 'color': "orange"},
+                                    {'range': [75, 100], 'color': "lightcoral"}
+                                ],
+                                'threshold': {
+                                    'line': {'color': "red", 'width': 4},
+                                    'thickness': 0.75,
+                                    'value': 75
+                                }
+                            }
+                        ))
+                        
+                        fig.update_layout(
+                            height=250,
+                            margin=dict(l=20, r=20, t=50, b=20)
+                        )
+                        
+                        st.plotly_chart(fig)
+                        
                         # Show feature importance
                         st.subheader("Key Risk Factors")
                         
@@ -490,22 +574,46 @@ def fraud_detection(db):
                         coefs = model_data["model"].coef_[0]
                         feature_importance = pd.DataFrame({
                             'Feature': model_data["feature_columns"],
-                            'Importance': np.abs(coefs),
-                            'Direction': np.sign(coefs)
-                        }).sort_values('Importance', ascending=False)
+                            'Importance': coefs
+                        }).sort_values('Importance', ascending=True)  # Ascending for horizontal bar chart
                         
-                        top_features = feature_importance.head(5)
+                        # Keep only top 10 features
+                        top_features = pd.concat([
+                            feature_importance.head(5),  # Top 5 negative
+                            feature_importance.tail(5)   # Top 5 positive
+                        ])
                         
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        bars = ax.barh(
-                            top_features['Feature'], 
-                            top_features['Importance'],
-                            color=top_features['Direction'].map({1: 'r', -1: 'g'})
+                        # Create color mapping
+                        colors = ['green' if x < 0 else 'red' for x in top_features['Importance']]
+                        
+                        # Create horizontal bar chart with Plotly
+                        fig = px.bar(
+                            top_features,
+                            x='Importance',
+                            y='Feature',
+                            orientation='h',
+                            title="Top Risk Factors",
+                            color_discrete_sequence=['red']
                         )
-                        ax.set_xlabel('Feature Importance')
-                        ax.set_title('Top 5 Features for Fraud Detection')
-                        ax.set_xlim(0, top_features['Importance'].max() * 1.1)
-                        st.pyplot(fig)
+                        
+                        # Update colors based on coefficient sign
+                        fig.update_traces(marker_color=colors)
+                        
+                        # Add a vertical line at x=0
+                        fig.add_shape(
+                            type="line",
+                            x0=0, y0=-0.5,
+                            x1=0, y1=len(top_features)-0.5,
+                            line=dict(color="black", width=1, dash="dash")
+                        )
+                        
+                        fig.update_layout(
+                            xaxis_title="Coefficient (Impact on Fraud Probability)",
+                            yaxis_title="Feature",
+                            height=400
+                        )
+                        
+                        st.plotly_chart(fig)
                         
                         # Explain feature values for this claim
                         st.subheader("Claim Features")
@@ -618,30 +726,35 @@ def fraud_detection(db):
                     fraud_prob = prediction["fraud_probability"] * 100
                     st.metric("Fraud Probability", f"{fraud_prob:.1f}%")
                 
-                # Risk gauge visualization
-                fig, ax = plt.subplots(figsize=(10, 2))
+                # Create a gauge chart with Plotly
+                fig = go.Figure(go.Indicator(
+                    mode = "gauge+number",
+                    value = fraud_prob,
+                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    title = {'text': "Fraud Risk"},
+                    gauge = {
+                        'axis': {'range': [None, 100]},
+                        'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
+                        'steps': [
+                            {'range': [0, 25], 'color': "lightgreen"},
+                            {'range': [25, 50], 'color': "lightyellow"},
+                            {'range': [50, 75], 'color': "orange"},
+                            {'range': [75, 100], 'color': "lightcoral"}
+                        ],
+                        'threshold': {
+                            'line': {'color': "red", 'width': 4},
+                            'thickness': 0.75,
+                            'value': 75
+                        }
+                    }
+                ))
                 
-                # Create gauge-like visualization
-                ax.axhline(y=0.5, xmin=0, xmax=1, color='gray', alpha=0.3, linewidth=8)
-                ax.axhline(y=0.5, xmin=0, xmax=fraud_prob/100, color='red' if fraud_prob > 50 else 'orange' if fraud_prob > 25 else 'green', linewidth=8)
+                fig.update_layout(
+                    height=250,
+                    margin=dict(l=20, r=20, t=50, b=20)
+                )
                 
-                # Add markers
-                ax.plot(0.25, 0.5, 'ko', markersize=10, alpha=0.3)
-                ax.plot(0.5, 0.5, 'ko', markersize=10, alpha=0.3)
-                ax.plot(0.75, 0.5, 'ko', markersize=10, alpha=0.3)
-                
-                # Add labels
-                ax.text(0, 0.5, 'Low Risk', ha='left', va='bottom')
-                ax.text(0.5, 0.5, 'Medium Risk', ha='center', va='bottom')
-                ax.text(1, 0.5, 'High Risk', ha='right', va='bottom')
-                
-                # Clean up the plot
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-                ax.axis('off')
-                
-                # Show the plot
-                st.pyplot(fig)
+                st.plotly_chart(fig)
                 
                 # Add recommendations
                 st.subheader("Next Steps")
@@ -654,6 +767,26 @@ def fraud_detection(db):
                     st.info("Medium-Low Risk: Proceed with standard verification steps")
                 else:
                     st.success("Low Risk: Proceed with standard processing")
+                
+                # Create radar chart of input features
+                radar_data = {
+                    'Feature': ['Individuals', 'Amount Paid', 'Community Frauds', 'Neighborhood Frauds', 'Influence'],
+                    'Value': [ind_count, amount_paid/10000, num_frauds_community, num_frauds_neighborhood, influence*1000]  # Scaled for visibility
+                }
+                
+                # Create a radar chart
+                fig = px.line_polar(
+                    pd.DataFrame(radar_data), 
+                    r='Value', 
+                    theta='Feature', 
+                    line_close=True,
+                    range_r=[0, max(radar_data['Value'])*1.2],
+                    title="Feature Radar Chart"
+                )
+                
+                fig.update_traces(fill='toself')
+                
+                st.plotly_chart(fig)
 
 # Display model evaluation page
 def model_evaluation(db):
@@ -711,10 +844,44 @@ def model_evaluation(db):
         # Display confusion matrix
         st.markdown("**Confusion Matrix**")
         
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(model_data["confusion_matrix"], annot=True, fmt='g', cmap='Blues', ax=ax)
-        ax.set_title('Confusion Matrix')
-        st.pyplot(fig)
+        # Convert confusion matrix to DataFrame format for plotly
+        conf_matrix = model_data["confusion_matrix"].values
+        
+        # Create a plotly heatmap for confusion matrix
+        categories = ['Legitimate', 'Fraud']
+        
+        # Create annotation text
+        annotations = []
+        for i, row in enumerate(conf_matrix):
+            for j, value in enumerate(row):
+                annotations.append(
+                    dict(
+                        x=j,
+                        y=i,
+                        text=str(value),
+                        font=dict(color='white' if value > conf_matrix.max()/2 else 'black'),
+                        showarrow=False
+                    )
+                )
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=conf_matrix,
+            x=['Predicted<br>Legitimate', 'Predicted<br>Fraud'],
+            y=['Actual<br>Legitimate', 'Actual<br>Fraud'],
+            colorscale='Blues',
+            showscale=False
+        ))
+        
+        fig.update_layout(
+            title='Confusion Matrix',
+            annotations=annotations,
+            height=400,
+            width=500,
+            xaxis=dict(title='Predicted'),
+            yaxis=dict(title='Actual')
+        )
+        
+        st.plotly_chart(fig)
         
         # Calculate and display metrics
         try:
@@ -726,12 +893,27 @@ def model_evaluation(db):
             f1 = f1_score(y_test, y_pred, zero_division=0)
             
             # Create metrics display
-            col1, col2, col3, col4 = st.columns(4)
+            metrics_data = {
+                'Metric': ['Accuracy', 'Precision', 'Recall', 'F1 Score'],
+                'Value': [accuracy, precision, recall, f1]
+            }
             
-            col1.metric("Accuracy", f"{accuracy:.2f}")
-            col2.metric("Precision", f"{precision:.2f}")
-            col3.metric("Recall", f"{recall:.2f}")
-            col4.metric("F1 Score", f"{f1:.2f}")
+            # Create a bar chart for metrics
+            fig = px.bar(
+                metrics_data,
+                x='Metric',
+                y='Value',
+                color='Metric',
+                title='Model Performance Metrics',
+                text_auto='.2f'
+            )
+            
+            fig.update_layout(
+                yaxis_range=[0, 1],
+                height=400
+            )
+            
+            st.plotly_chart(fig)
             
             # Add metric explanations
             with st.expander("Metric Explanations"):
@@ -751,41 +933,13 @@ def model_evaluation(db):
         st.subheader("Feature Importance Analysis")
         
         try:
+            # Get feature importance
             coefs = model_data["model"].coef_[0]
             feature_importance = pd.DataFrame({
                 'Feature': model_data["feature_columns"],
                 'Coefficient': coefs,
                 'Absolute Importance': np.abs(coefs)
             }).sort_values('Absolute Importance', ascending=False)
-            
-            # Plot feature importance
-            fig, ax = plt.subplots(figsize=(10, 8))
-            bars = ax.barh(feature_importance['Feature'], feature_importance['Coefficient'])
-            
-            # Color bars based on coefficient sign
-            for i, bar in enumerate(bars):
-                if feature_importance.iloc[i]['Coefficient'] < 0:
-                    bar.set_color('green')
-                else:
-                    bar.set_color('red')
-                    
-            ax.set_xlabel('Coefficient Value')
-            ax.set_title('Feature Importance (Coefficients)')
-            ax.axvline(x=0, color='k', linestyle='-', alpha=0.3)
-            st.pyplot(fig)
-            
-            # Feature importance explanation
-            st.markdown("""
-            **How to interpret this chart:**
-            - **Red bars (positive coefficients)**: These features increase the probability of fraud
-            - **Green bars (negative coefficients)**: These features decrease the probability of fraud
-            - **Bar length**: Indicates the strength of the effect
-            
-            The model uses logistic regression, so each coefficient represents the change in log-odds of fraud for a one-unit increase in the feature.
-            """)
-            
-            # Feature importance table
-            st.subheader("Feature Importance Table")
             
             # Add feature descriptions
             feature_desc = {
@@ -801,8 +955,51 @@ def model_evaluation(db):
                 'policy_premium_U': 'Premium type unknown'
             }
             
-            # Add descriptions to the DataFrame
             feature_importance['Description'] = feature_importance['Feature'].map(lambda x: feature_desc.get(x, x))
+            
+            # Plot feature importance with Plotly
+            colors = ['red' if x > 0 else 'green' for x in feature_importance['Coefficient']]
+            
+            fig = px.bar(
+                feature_importance,
+                x='Coefficient',
+                y='Feature',
+                orientation='h',
+                title='Feature Importance (Coefficients)',
+                hover_data=['Description', 'Absolute Importance'],
+                labels={'Coefficient': 'Impact on Fraud Probability'},
+                color='Coefficient', 
+                color_continuous_scale=['green', 'white', 'red'],
+                color_continuous_midpoint=0
+            )
+            
+            # Add a vertical line at x=0
+            fig.add_shape(
+                type="line",
+                x0=0, y0=-0.5,
+                x1=0, y1=len(feature_importance)-0.5,
+                line=dict(color="black", width=1, dash="dash")
+            )
+            
+            fig.update_layout(
+                height=600,
+                coloraxis_showscale=False
+            )
+            
+            st.plotly_chart(fig)
+            
+            # Feature importance explanation
+            st.markdown("""
+            **How to interpret this chart:**
+            - **Red bars (positive coefficients)**: These features increase the probability of fraud
+            - **Green bars (negative coefficients)**: These features decrease the probability of fraud
+            - **Bar length**: Indicates the strength of the effect
+            
+            The model uses logistic regression, so each coefficient represents the change in log-odds of fraud for a one-unit increase in the feature.
+            """)
+            
+            # Feature importance table
+            st.subheader("Feature Importance Table")
             
             # Display the table
             display_columns = ['Feature', 'Description', 'Coefficient', 'Absolute Importance']
@@ -821,21 +1018,40 @@ def model_evaluation(db):
                 fpr, tpr, thresholds = roc_curve(y_test, y_prob)
                 roc_auc = auc(fpr, tpr)
                 
-                # Plot ROC curve
-                fig, ax = plt.subplots(figsize=(8, 6))
-                ax.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-                ax.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--')
-                ax.set_xlim([0.0, 1.0])
-                ax.set_ylim([0.0, 1.05])
-                ax.set_xlabel('False Positive Rate')
-                ax.set_ylabel('True Positive Rate')
-                ax.set_title('Receiver Operating Characteristic (ROC) Curve')
-                ax.legend(loc="lower right")
+                # Create ROC curve with Plotly
+                fig = go.Figure()
+                
+                # Add ROC curve
+                fig.add_trace(go.Scatter(
+                    x=fpr, y=tpr,
+                    mode='lines',
+                    name=f'ROC curve (area = {roc_auc:.2f})',
+                    line=dict(color='blue', width=2)
+                ))
+                
+                # Add diagonal line (random classifier)
+                fig.add_trace(go.Scatter(
+                    x=[0, 1], y=[0, 1],
+                    mode='lines',
+                    name='Random',
+                    line=dict(color='gray', width=1, dash='dash')
+                ))
+                
+                # Update layout
+                fig.update_layout(
+                    title='Receiver Operating Characteristic (ROC) Curve',
+                    xaxis=dict(title='False Positive Rate'),
+                    yaxis=dict(title='True Positive Rate'),
+                    legend=dict(x=0.7, y=0.05),
+                    width=700,
+                    height=500
+                )
                 
                 # Add grid
-                ax.grid(True, linestyle='--', alpha=0.6)
+                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+                fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
                 
-                st.pyplot(fig)
+                st.plotly_chart(fig)
                 
                 # ROC curve explanation
                 st.markdown("""
@@ -851,6 +1067,81 @@ def model_evaluation(db):
                 - Catching more fraud (higher TPR, but more false alarms)
                 - Reducing false alarms (lower FPR, but missing more fraud)
                 """)
+                
+                # Create threshold selection visualization
+                st.subheader("Threshold Selection Tool")
+                
+                # Create dataframe with thresholds
+                threshold_df = pd.DataFrame({
+                    'Threshold': thresholds,
+                    'True Positive Rate': tpr[:-1],  # Exclude the last point
+                    'False Positive Rate': fpr[:-1]  # Exclude the last point
+                })
+                
+                # Only keep some threshold points for clarity
+                if len(threshold_df) > 20:
+                    indices = np.linspace(0, len(threshold_df)-1, 20, dtype=int)
+                    threshold_df = threshold_df.iloc[indices]
+                
+                # Create interactive threshold selector
+                selected_threshold = st.slider(
+                    "Select classification threshold:",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.5,
+                    step=0.05
+                )
+                
+                # Find closest threshold
+                closest_idx = (np.abs(threshold_df['Threshold'] - selected_threshold)).argmin()
+                selected_tpr = threshold_df.iloc[closest_idx]['True Positive Rate']
+                selected_fpr = threshold_df.iloc[closest_idx]['False Positive Rate']
+                
+                # Display metrics at selected threshold
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Threshold", f"{selected_threshold:.2f}")
+                col2.metric("True Positive Rate", f"{selected_tpr:.2f}")
+                col3.metric("False Positive Rate", f"{selected_fpr:.2f}")
+                
+                # Create a visual representation
+                fig = go.Figure()
+                
+                # Add ROC curve
+                fig.add_trace(go.Scatter(
+                    x=fpr, y=tpr,
+                    mode='lines',
+                    name='ROC curve',
+                    line=dict(color='blue', width=2)
+                ))
+                
+                # Add selected point
+                fig.add_trace(go.Scatter(
+                    x=[selected_fpr],
+                    y=[selected_tpr],
+                    mode='markers',
+                    marker=dict(size=12, color='red'),
+                    name=f'Threshold = {selected_threshold:.2f}'
+                ))
+                
+                # Add diagonal line
+                fig.add_trace(go.Scatter(
+                    x=[0, 1], y=[0, 1],
+                    mode='lines',
+                    name='Random',
+                    line=dict(color='gray', width=1, dash='dash')
+                ))
+                
+                # Update layout
+                fig.update_layout(
+                    title='Selected Threshold on ROC Curve',
+                    xaxis=dict(title='False Positive Rate'),
+                    yaxis=dict(title='True Positive Rate'),
+                    legend=dict(x=0.7, y=0.05),
+                    width=700,
+                    height=500
+                )
+                
+                st.plotly_chart(fig)
                 
             except Exception as e:
                 st.error(f"Error in ROC curve analysis: {e}")
