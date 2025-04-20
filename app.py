@@ -288,7 +288,7 @@ def explore_claims(db):
         # Display claims table
         st.subheader("Claims")
         # Use st.write instead of st.dataframe for better width handling in older Streamlit
-        st.write(filtered_df)
+        st.write(filtered_df, width=2500)
         
         # Add a selectbox to choose a claim
         if not filtered_df.empty:
@@ -537,83 +537,87 @@ def fraud_detection(db):
                             fraud_prob = prediction["fraud_probability"] * 100
                             st.metric("Fraud Probability", f"{fraud_prob:.1f}%")
                         
-                        # Create a gauge chart with Plotly
-                        fig = go.Figure(go.Indicator(
-                            mode = "gauge+number",
-                            value = fraud_prob,
-                            domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': "Fraud Risk"},
-                            gauge = {
-                                'axis': {'range': [None, 100]},
-                                'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
-                                'steps': [
-                                    {'range': [0, 25], 'color': "lightgreen"},
-                                    {'range': [25, 50], 'color': "lightyellow"},
-                                    {'range': [50, 75], 'color': "orange"},
-                                    {'range': [75, 100], 'color': "lightcoral"}
-                                ],
-                                'threshold': {
-                                    'line': {'color': "red", 'width': 4},
-                                    'thickness': 0.75,
-                                    'value': 75
+                        # Place the gauge and risk factors side by side
+                        vis_col1, vis_col2 = st.columns(2)
+                        
+                        with vis_col1:
+                            # Create a gauge chart with Plotly
+                            fig = go.Figure(go.Indicator(
+                                mode = "gauge+number",
+                                value = fraud_prob,
+                                domain = {'x': [0, 1], 'y': [0, 1]},
+                                title = {'text': "Fraud Risk"},
+                                gauge = {
+                                    'axis': {'range': [None, 100]},
+                                    'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
+                                    'steps': [
+                                        {'range': [0, 25], 'color': "lightgreen"},
+                                        {'range': [25, 50], 'color': "lightyellow"},
+                                        {'range': [50, 75], 'color': "orange"},
+                                        {'range': [75, 100], 'color': "lightcoral"}
+                                    ],
+                                    'threshold': {
+                                        'line': {'color': "red", 'width': 4},
+                                        'thickness': 0.75,
+                                        'value': 75
+                                    }
                                 }
-                            }
-                        ))
+                            ))
+                            
+                            fig.update_layout(
+                                height=400,
+                                margin=dict(l=20, r=20, t=50, b=20)
+                            )
+                            
+                            st.plotly_chart(fig)
                         
-                        fig.update_layout(
-                            height=250,
-                            margin=dict(l=20, r=20, t=50, b=20)
-                        )
-                        
-                        st.plotly_chart(fig)
-                        
-                        # Show feature importance
-                        st.subheader("Key Risk Factors")
-                        
-                        # Get top features based on model coefficients
-                        coefs = model_data["model"].coef_[0]
-                        feature_importance = pd.DataFrame({
-                            'Feature': model_data["feature_columns"],
-                            'Importance': coefs
-                        }).sort_values('Importance', ascending=True)  # Ascending for horizontal bar chart
-                        
-                        # Keep only top 10 features
-                        top_features = pd.concat([
-                            feature_importance.head(5),  # Top 5 negative
-                            feature_importance.tail(5)   # Top 5 positive
-                        ])
-                        
-                        # Create color mapping
-                        colors = ['green' if x < 0 else 'red' for x in top_features['Importance']]
-                        
-                        # Create horizontal bar chart with Plotly
-                        fig = px.bar(
-                            top_features,
-                            x='Importance',
-                            y='Feature',
-                            orientation='h',
-                            title="Top Risk Factors",
-                            color_discrete_sequence=['red']
-                        )
-                        
-                        # Update colors based on coefficient sign
-                        fig.update_traces(marker_color=colors)
-                        
-                        # Add a vertical line at x=0
-                        fig.add_shape(
-                            type="line",
-                            x0=0, y0=-0.5,
-                            x1=0, y1=len(top_features)-0.5,
-                            line=dict(color="black", width=1, dash="dash")
-                        )
-                        
-                        fig.update_layout(
-                            xaxis_title="Coefficient (Impact on Fraud Probability)",
-                            yaxis_title="Feature",
-                            height=400
-                        )
-                        
-                        st.plotly_chart(fig)
+                        with vis_col2:
+                            # Show feature importance
+                            st.subheader("Key Risk Factors")
+                            
+                            # Get top features based on model coefficients
+                            coefs = model_data["model"].coef_[0]
+                            feature_importance = pd.DataFrame({
+                                'Feature': model_data["feature_columns"],
+                                'Importance': coefs
+                            }).sort_values('Importance', ascending=True)  # Ascending for horizontal bar chart
+                            
+                            # Keep only top 10 features
+                            top_features = pd.concat([
+                                feature_importance.head(5),  # Top 5 negative
+                                feature_importance.tail(5)   # Top 5 positive
+                            ])
+                            
+                            # Create color mapping
+                            colors = ['green' if x < 0 else 'red' for x in top_features['Importance']]
+                            
+                            # Create horizontal bar chart with Plotly
+                            fig = px.bar(
+                                top_features,
+                                x='Importance',
+                                y='Feature',
+                                orientation='h',
+                                color_discrete_sequence=['red']
+                            )
+                            
+                            # Update colors based on coefficient sign
+                            fig.update_traces(marker_color=colors)
+                            
+                            # Add a vertical line at x=0
+                            fig.add_shape(
+                                type="line",
+                                x0=0, y0=-0.5,
+                                x1=0, y1=len(top_features)-0.5,
+                                line=dict(color="black", width=1, dash="dash")
+                            )
+                            
+                            fig.update_layout(
+                                xaxis_title="Impact on Fraud Probability",
+                                yaxis_title="Feature",
+                                height=400
+                            )
+                            
+                            st.plotly_chart(fig)
                         
                         # Explain feature values for this claim
                         st.subheader("Claim Features")
@@ -726,49 +730,118 @@ def fraud_detection(db):
                     fraud_prob = prediction["fraud_probability"] * 100
                     st.metric("Fraud Probability", f"{fraud_prob:.1f}%")
                 
-                # Create a gauge chart with Plotly
-                fig = go.Figure(go.Indicator(
-                    mode = "gauge+number",
-                    value = fraud_prob,
-                    domain = {'x': [0, 1], 'y': [0, 1]},
-                    title = {'text': "Fraud Risk"},
-                    gauge = {
-                        'axis': {'range': [None, 100]},
-                        'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
-                        'steps': [
-                            {'range': [0, 25], 'color': "lightgreen"},
-                            {'range': [25, 50], 'color': "lightyellow"},
-                            {'range': [50, 75], 'color': "orange"},
-                            {'range': [75, 100], 'color': "lightcoral"}
-                        ],
-                        'threshold': {
-                            'line': {'color': "red", 'width': 4},
-                            'thickness': 0.75,
-                            'value': 75
+                # Place gauge and recommendation side by side
+                vis_col1, vis_col2 = st.columns(2)
+                
+                with vis_col1:
+                    # Create a gauge chart with Plotly
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = fraud_prob,
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "Fraud Risk"},
+                        gauge = {
+                            'axis': {'range': [None, 100]},
+                            'bar': {'color': "darkred" if fraud_prob > 75 else "orange" if fraud_prob > 50 else "yellow" if fraud_prob > 25 else "green"},
+                            'steps': [
+                                {'range': [0, 25], 'color': "lightgreen"},
+                                {'range': [25, 50], 'color': "lightyellow"},
+                                {'range': [50, 75], 'color': "orange"},
+                                {'range': [75, 100], 'color': "lightcoral"}
+                            ],
+                            'threshold': {
+                                'line': {'color': "red", 'width': 4},
+                                'thickness': 0.75,
+                                'value': 75
+                            }
                         }
+                    ))
+                    
+                    fig.update_layout(
+                        height=400,
+                        margin=dict(l=20, r=20, t=50, b=20)
+                    )
+                    
+                    st.plotly_chart(fig)
+                
+                with vis_col2:
+                    # Add recommendations with matching height
+                    st.subheader("Next Steps")
+                    
+                    # Recommendation box with height to match gauge
+                    recommendation_style = """
+                    <style>
+                    .recommendation-box {
+                        height: 290px;
+                        padding: 20px;
+                        border-radius: 5px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
                     }
-                ))
+                    .high-risk { background-color: rgba(255, 99, 71, 0.2); }
+                    .medium-risk { background-color: rgba(255, 165, 0, 0.2); }
+                    .low-med-risk { background-color: rgba(255, 255, 0, 0.1); }
+                    .low-risk { background-color: rgba(144, 238, 144, 0.2); }
+                    </style>
+                    """
+                    
+                    st.markdown(recommendation_style, unsafe_allow_html=True)
+                    
+                    if fraud_prob > 75:
+                        st.markdown("""
+                        <div class="recommendation-box high-risk">
+                        <h3>⚠️ High Risk Action Required:</h3>
+                        <ul>
+                          <li>Immediately escalate to fraud investigation team</li>
+                          <li>Place a hold on all claim processing</li>
+                          <li>Verify all documentation thoroughly</li>
+                          <li>Schedule interviews with all involved parties</li>
+                          <li>Check for connections to known fraud patterns</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    elif fraud_prob > 50:
+                        st.markdown("""
+                        <div class="recommendation-box medium-risk">
+                        <h3>⚠️ Medium-High Risk Action Required:</h3>
+                        <ul>
+                          <li>Request additional verification before processing</li>
+                          <li>Verify identity of all involved individuals</li>
+                          <li>Cross-check with previous claims history</li>
+                          <li>Conduct additional phone interviews</li>
+                          <li>Document all unusual aspects of the claim</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    elif fraud_prob > 25:
+                        st.markdown("""
+                        <div class="recommendation-box low-med-risk">
+                        <h3>ℹ️ Medium-Low Risk Action Required:</h3>
+                        <ul>
+                          <li>Proceed with standard verification steps</li>
+                          <li>Verify documentation is complete</li>
+                          <li>Follow normal processing procedures</li>
+                          <li>Note any unusual patterns for future reference</li>
+                          <li>No special handling required</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+                        <div class="recommendation-box low-risk">
+                        <h3>✓ Low Risk Action Required:</h3>
+                        <ul>
+                          <li>Proceed with standard processing</li>
+                          <li>No additional verification needed</li>
+                          <li>Process claim according to normal timeline</li>
+                          <li>Apply standard documentation procedures</li>
+                          <li>No special attention required</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
                 
-                fig.update_layout(
-                    height=250,
-                    margin=dict(l=20, r=20, t=50, b=20)
-                )
-                
-                st.plotly_chart(fig)
-                
-                # Add recommendations
-                st.subheader("Next Steps")
-                
-                if fraud_prob > 75:
-                    st.error("High Risk: Recommend immediate investigation and hold on claim processing")
-                elif fraud_prob > 50:
-                    st.warning("Medium-High Risk: Recommend additional verification steps before processing")
-                elif fraud_prob > 25:
-                    st.info("Medium-Low Risk: Proceed with standard verification steps")
-                else:
-                    st.success("Low Risk: Proceed with standard processing")
-                
-                # Create radar chart of input features
+                # Create radar chart of input features below the gauges
                 radar_data = {
                     'Feature': ['Individuals', 'Amount Paid', 'Community Frauds', 'Neighborhood Frauds', 'Influence'],
                     'Value': [ind_count, amount_paid/10000, num_frauds_community, num_frauds_neighborhood, influence*1000]  # Scaled for visibility
@@ -841,92 +914,96 @@ def model_evaluation(db):
     with tabs[0]:
         st.subheader("Model Performance Metrics")
         
-        # Display confusion matrix
-        st.markdown("**Confusion Matrix**")
+        # Display confusion matrix and metrics side by side
+        cm_col1, cm_col2 = st.columns(2)
         
-        # Convert confusion matrix to DataFrame format for plotly
-        conf_matrix = model_data["confusion_matrix"].values
-        
-        # Create a plotly heatmap for confusion matrix
-        categories = ['Legitimate', 'Fraud']
-        
-        # Create annotation text
-        annotations = []
-        for i, row in enumerate(conf_matrix):
-            for j, value in enumerate(row):
-                annotations.append(
-                    dict(
-                        x=j,
-                        y=i,
-                        text=str(value),
-                        font=dict(color='white' if value > conf_matrix.max()/2 else 'black'),
-                        showarrow=False
+        with cm_col1:
+            st.markdown("**Confusion Matrix**")
+            
+            # Convert confusion matrix to DataFrame format for plotly
+            conf_matrix = model_data["confusion_matrix"].values
+            
+            # Create a plotly heatmap for confusion matrix
+            categories = ['Legitimate', 'Fraud']
+            
+            # Create annotation text
+            annotations = []
+            for i, row in enumerate(conf_matrix):
+                for j, value in enumerate(row):
+                    annotations.append(
+                        dict(
+                            x=j,
+                            y=i,
+                            text=str(value),
+                            font=dict(color='white' if value > conf_matrix.max()/2 else 'black'),
+                            showarrow=False
+                        )
                     )
-                )
-        
-        fig = go.Figure(data=go.Heatmap(
-            z=conf_matrix,
-            x=['Predicted<br>Legitimate', 'Predicted<br>Fraud'],
-            y=['Actual<br>Legitimate', 'Actual<br>Fraud'],
-            colorscale='Blues',
-            showscale=False
-        ))
-        
-        fig.update_layout(
-            title='Confusion Matrix',
-            annotations=annotations,
-            height=400,
-            width=500,
-            xaxis=dict(title='Predicted'),
-            yaxis=dict(title='Actual')
-        )
-        
-        st.plotly_chart(fig)
-        
-        # Calculate and display metrics
-        try:
-            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
             
-            accuracy = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred, zero_division=0)
-            recall = recall_score(y_test, y_pred, zero_division=0)
-            f1 = f1_score(y_test, y_pred, zero_division=0)
-            
-            # Create metrics display
-            metrics_data = {
-                'Metric': ['Accuracy', 'Precision', 'Recall', 'F1 Score'],
-                'Value': [accuracy, precision, recall, f1]
-            }
-            
-            # Create a bar chart for metrics
-            fig = px.bar(
-                metrics_data,
-                x='Metric',
-                y='Value',
-                color='Metric',
-                title='Model Performance Metrics',
-                text_auto='.2f'
-            )
+            fig = go.Figure(data=go.Heatmap(
+                z=conf_matrix,
+                x=['Predicted<br>Legitimate', 'Predicted<br>Fraud'],
+                y=['Actual<br>Legitimate', 'Actual<br>Fraud'],
+                colorscale='Blues',
+                showscale=False
+            ))
             
             fig.update_layout(
-                yaxis_range=[0, 1],
-                height=400
+                title='Confusion Matrix',
+                annotations=annotations,
+                height=400,
+                width=500,
+                xaxis=dict(title='Predicted'),
+                yaxis=dict(title='Actual')
             )
             
             st.plotly_chart(fig)
-            
-            # Add metric explanations
-            with st.expander("Metric Explanations"):
-                st.markdown("""
-                - **Accuracy**: Proportion of correct predictions (both true positives and true negatives)
-                - **Precision**: Proportion of positive predictions that are actually positive (TP / (TP + FP))
-                - **Recall**: Proportion of actual positives that are correctly identified (TP / (TP + FN))
-                - **F1 Score**: Harmonic mean of precision and recall, balancing both metrics
+        
+        with cm_col2:
+            # Calculate and display metrics
+            try:
+                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
                 
-                For fraud detection, high precision means fewer false alarms, while high recall means catching more fraudulent claims.
-                """)
-        except Exception as e:
-            st.error(f"Error calculating metrics: {e}")
+                accuracy = accuracy_score(y_test, y_pred)
+                precision = precision_score(y_test, y_pred, zero_division=0)
+                recall = recall_score(y_test, y_pred, zero_division=0)
+                f1 = f1_score(y_test, y_pred, zero_division=0)
+                
+                # Create metrics display
+                metrics_data = {
+                    'Metric': ['Accuracy', 'Precision', 'Recall', 'F1 Score'],
+                    'Value': [accuracy, precision, recall, f1]
+                }
+                
+                # Create a bar chart for metrics
+                fig = px.bar(
+                    metrics_data,
+                    x='Metric',
+                    y='Value',
+                    color='Metric',
+                    title='Model Performance Metrics',
+                    text_auto='.2f'
+                )
+                
+                fig.update_layout(
+                    yaxis_range=[0, 1],
+                    height=400
+                )
+                
+                st.plotly_chart(fig)
+            except Exception as e:
+                st.error(f"Error calculating metrics: {e}")
+        
+        # Add metric explanations
+        with st.expander("Metric Explanations"):
+            st.markdown("""
+            - **Accuracy**: Proportion of correct predictions (both true positives and true negatives)
+            - **Precision**: Proportion of positive predictions that are actually positive (TP / (TP + FP))
+            - **Recall**: Proportion of actual positives that are correctly identified (TP / (TP + FN))
+            - **F1 Score**: Harmonic mean of precision and recall, balancing both metrics
+            
+            For fraud detection, high precision means fewer false alarms, while high recall means catching more fraudulent claims.
+            """)
     
     # Tab 2: Feature Importance
     with tabs[1]:
