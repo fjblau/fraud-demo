@@ -2,6 +2,10 @@ to run:
 
 streamlit run ./app.py
 
+or for better ag_grid based version
+
+streamlit run ./app_ag.py
+
 
 ![image](https://github.com/user-attachments/assets/79b0a777-c6ae-4509-ab0a-043f6e51a1a8)
 
