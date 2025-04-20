@@ -1,0 +1,135 @@
+indices:
+  address:
+  - add_id
+  claim:
+  - clm_id
+  claim_payment:
+  - pay_id
+  incident:
+  - inc_id
+  individuals:
+  - ind_id
+  injury:
+  - inj_id
+  policy:
+  - pol_id
+  vehicle:
+  - veh_id
+
+
+name_mappings:
+  individuals:
+    label: INDIVIDUAL
+  address:
+    label: ADDRESS
+  policy:
+    label: POLICY
+  vehicle:
+    label: VEHICLE
+  incident:
+    label: INCIDENT
+  claim:
+    label: CLAIM
+  claim_payment:
+    label: CLAIM_PAYMENT
+  injury:
+    label: INJURY
+
+one_to_many_relations:
+  address: []
+  individuals:
+  - foreign_key:
+      column_name: add_id
+      reference_table: address
+      reference_key: add_id
+    label: LIVES_IN
+  vehicle: []
+  policy:
+  - foreign_key:
+      column_name: insurer_id
+      reference_table: individuals
+      reference_key: ind_id
+    label: INSURED
+      
+  - foreign_key:
+      column_name: insured_with_id
+      reference_table: individuals
+      reference_key: ind_id
+    label: INSURED_WITH
+      
+  - foreign_key:
+      column_name: veh_id
+      reference_table: vehicle
+      reference_key: veh_id
+    label: INSURED
+      
+  - foreign_key:
+      column_name: add_id
+      reference_table: address
+      reference_key: add_id
+    label: POLICY_ADDRESS
+      
+  claim:
+  - foreign_key: 
+      column_name: inc_id
+      reference_table: incident
+      reference_key: inc_id
+    label: ON_INCIDENT
+      
+  incident:
+  - foreign_key:
+      column_name: pol_id
+      reference_table: policy
+      reference_key: pol_id
+    label: ON_POLICY
+      
+  - foreign_key:
+      column_name: add_id
+      reference_table: address
+      reference_key: add_id
+    label: ON_ADDRESS
+      
+  claim_payment:
+  - foreign_key:
+      column_name: payer_id
+      reference_table: individuals
+      reference_key: ind_id
+    label: PAYER
+      
+  - foreign_key:
+      column_name: payee_id
+      reference_table: individuals
+      reference_key: ind_id
+    label: PAYEE
+      
+  - foreign_key:
+      column_name: clm_id
+      reference_table: claim
+      reference_key: clm_id
+    label: ON_CLAIM
+      
+  injury:
+  - foreign_key:
+      column_name: clm_id
+      reference_table: claim
+      reference_key: clm_id
+    label: ON_CLAIM
+      
+  - foreign_key:
+      column_name: ind_id
+      reference_table: individuals
+      reference_key: ind_id
+    label: ON_INDIVIDUAL
+
+many_to_many_relations:
+  incident_individual:
+    foreign_key_from:
+      column_name: inc_id
+      reference_table: incident
+      reference_key: inc_id
+    foreign_key_to:
+      column_name: ind_id
+      reference_table: individuals
+      reference_key: ind_id
+    label: INCIDENT
+    properties: []
