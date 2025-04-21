@@ -233,60 +233,91 @@ class FeatureStore:
     AVG_AMOUNT = "avg_amount"
 
 def extract_features(db, claim_id):
-    """Extract features for a claim - simplified for Community Edition"""
+    """Extract features for a claim - simplified for Community Edition with error handling"""
     try:
-        # Basic claim info
+        # Basic claim info with error handling
         claim_info = db.execute_and_fetch(f"""
             MATCH (claim:CLAIM {{clm_id: '{claim_id}'}})
             RETURN claim.amount AS amount
         """)
         
-        # Count individuals
-        ind_count = db.execute_and_fetch(f"""
+        # Get the amount with safe extraction
+        claim_info_list = list(claim_info) if claim_info else []
+        amount = claim_info_list[0]["amount"] if claim_info_list and "amount" in claim_info_list[0] else 0
+        
+        # Count individuals with error handling
+        ind_count_query = db.execute_and_fetch(f"""
             MATCH (claim:CLAIM {{clm_id: '{claim_id}'}})-[:ON_INCIDENT]->(incident:INCIDENT)-[:INCIDENT]->(individual:INDIVIDUAL)
             RETURN count(individual) AS count
         """)
         
-        # Get policy premium type
+        # Get the count with safe extraction
+        ind_count_list = list(ind_count_query) if ind_count_query else []
+        ind_count = ind_count_list[0]["count"] if ind_count_list and "count" in ind_count_list[0] else 0
+        
+        # Get policy premium type with error handling
         policy_info = db.execute_and_fetch(f"""
             MATCH (claim:CLAIM {{clm_id: '{claim_id}'}})-[:ON_POLICY]->(policy:POLICY)
             RETURN policy.premium_type AS premium_type
         """)
         
-        # Count total claims and average amount for the policy holder
-        policy_stats = db.execute_and_fetch(f"""
+        # Get the premium type with safe extraction
+        policy_info_list = list(policy_info) if policy_info else []
+        premium = policy_info_list[0]["premium_type"] if policy_info_list and "premium_type" in policy_info_list[0] else "U"
+        
+        # Split the policy stats query into two separate ones to avoid CASE with aggregation
+        
+        # First, count total claims on the policy
+        claims_count_query = db.execute_and_fetch(f"""
             MATCH (claim:CLAIM {{clm_id: '{claim_id}'}})-[:ON_POLICY]->(policy:POLICY)
             MATCH (other_claim:CLAIM)-[:ON_POLICY]->(policy)
-            RETURN count(other_claim) AS claim_count, avg(other_claim.amount) AS avg_amount
+            RETURN count(other_claim) AS claim_count
         """)
         
-        # Extract values
-        amount = list(claim_info)[0]["amount"] if claim_info else 0
-        count = list(ind_count)[0]["count"] if ind_count else 0
-        premium = list(policy_info)[0]["premium_type"] if policy_info else "U"  # Unknown if not found
+        # Get claims count with safe extraction
+        claims_count_list = list(claims_count_query) if claims_count_query else []
+        num_claims = claims_count_list[0]["claim_count"] if claims_count_list and "claim_count" in claims_count_list[0] else 1
         
-        policy_stats_list = list(policy_stats) if policy_stats else []
-        if policy_stats_list:
-            num_claims = policy_stats_list[0]["claim_count"]
-            avg_amount = policy_stats_list[0]["avg_amount"]
-        else:
-            num_claims = 1  # Just this claim
+        # Default to 1 if no claims found
+        if num_claims == 0:
+            num_claims = 1
+        
+        # Second, calculate average amount if there are claims
+        avg_amount_query = db.execute_and_fetch(f"""
+            MATCH (claim:CLAIM {{clm_id: '{claim_id}'}})-[:ON_POLICY]->(policy:POLICY)
+            MATCH (other_claim:CLAIM)-[:ON_POLICY]->(policy)
+            RETURN avg(other_claim.amount) AS avg_amount
+        """)
+        
+        # Get average amount with safe extraction
+        avg_amount_list = list(avg_amount_query) if avg_amount_query else []
+        avg_amount = avg_amount_list[0]["avg_amount"] if avg_amount_list and "avg_amount" in avg_amount_list[0] else amount
+        
+        # If avg_amount is None or 0, use the current claim amount
+        if avg_amount is None or avg_amount == 0:
             avg_amount = amount
         
-        # Create feature dictionary
+        # Create feature dictionary with safe values
         features = {
-            FeatureStore.IND_COUNT: count,
-            FeatureStore.AMT_PAID: amount,
-            FeatureStore.POL_PREMIUM: premium,
-            FeatureStore.NUM_CLAIMS: num_claims,
-            FeatureStore.AVG_AMOUNT: avg_amount
+            FeatureStore.IND_COUNT: int(ind_count) if isinstance(ind_count, (int, float)) else 0,
+            FeatureStore.AMT_PAID: float(amount) if isinstance(amount, (int, float)) else 0.0,
+            FeatureStore.POL_PREMIUM: str(premium) if premium else "U",
+            FeatureStore.NUM_CLAIMS: int(num_claims) if isinstance(num_claims, (int, float)) else 1,
+            FeatureStore.AVG_AMOUNT: float(avg_amount) if isinstance(avg_amount, (int, float)) else 0.0
         }
         
         return features
     except Exception as e:
         st.error(f"Error extracting features: {e}")
-        return {}
-
+        # Return default features in case of error
+        return {
+            FeatureStore.IND_COUNT: 0,
+            FeatureStore.AMT_PAID: 0.0,
+            FeatureStore.POL_PREMIUM: "U",
+            FeatureStore.NUM_CLAIMS: 1,
+            FeatureStore.AVG_AMOUNT: 0.0
+        }
+        
 def prepare_new_claim_features(manual_features):
     """Create features DataFrame from manually entered values"""
     try:
