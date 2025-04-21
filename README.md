@@ -2,7 +2,9 @@ to run:
 
 streamlit run ./app_ag.py
 
-Note: this app requires an enterprise license for the memgraph database server.
+Note: this app requires an enterprise license for the memgraph database server. To run in community edition with reduced features use:
+
+streamlit run ./app_community.py
 
 Please see www.memgraph.com for more information.
 
